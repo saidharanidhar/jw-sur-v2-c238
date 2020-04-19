@@ -1,0 +1,71 @@
+.survey-cards-row {
+	justify-content: space-evenly;
+}
+
+.survey-image-cards {
+	background-color: transparent;
+	border: none !important;
+}
+
+.survey-proceed-row {
+	position: fixed;
+	bottom: 0;
+	width: 100%;
+	background-color: orange;
+	height: 7%;
+}
+
+.survey-proceed-col-items-center {
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	flex-direction: column;
+}
+
+.survey-image {
+    min-height: 16rem;
+    max-width: 11rem;
+    max-height: 16rem;
+    min-width: 11rem;
+}
+
+.survey-image-selected {
+	border: 10px solid orange;
+	border-radius: 10%;
+}
+
+.survey-image-not-selected {
+	border: 10px solid transparent;
+	border-radius: 10%;
+}
+
+.survey-infinite-scroll-div {
+	margin-bottom: 15vh;
+}
+
+.choose-horizontal-scroll-button {
+	padding: 2.5rem 1rem;
+	border-radius: 0.3rem;
+	opacity: 0.8;
+	background-color: transparent;
+	border-color: transparent;
+}
+
+.choose-scroll-name {
+	padding-left: 1rem;
+}
+
+.page-title-row{
+	margin: 0.5rem;
+}
+
+.page-title-h4{
+	padding: 0.3rem;
+	background-color: orange;
+	border-radius: 0.3rem;
+}
+
+.feedback-form{
+	text-align: left;
+	font-size: x-large;
+}
