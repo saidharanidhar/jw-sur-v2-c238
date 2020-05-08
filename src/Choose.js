@@ -1,11 +1,21 @@
 import "./global.css";
 
-import { Button, Card, Col, Container, Row, Spinner } from "react-bootstrap";
+import {
+	Button,
+	Card,
+	Col,
+	Container,
+	Form,
+	OverlayTrigger,
+	Row,
+	Spinner,
+	Tooltip,
+} from "react-bootstrap";
 
 import React from "react";
 import ScrollMenu from "react-horizontal-scrolling-menu";
 import env from "./environment";
-import { sendRequest } from "./utilities";
+import { getRecommendations } from "./utilities";
 
 const chooseSettings = env.settings.choose;
 const maxIterations = env.settings.maxIterations;
@@ -15,28 +25,26 @@ class Choose extends React.Component {
 		titles: [],
 		eventlogs: [],
 		trackTime: null,
-		pageRequests: 0,
-		totalRequests: 0,
 		selected: new Set(),
 		requestInProgress: false,
 		settings:
 			chooseSettings[this.props.location.state.iteration] || chooseSettings[0],
+		feedback: {
+			personalizedChoices: "1",
+			watchTonight: "1",
+			alreadySeen: "NO",
+			comparision: "The same",
+		},
 		...this.props.location.state,
 	};
 
-	scrollRef = React.createRef();
-
 	setPerferencesAPIConfig = () => {
-		const { region, sessionID, surveyData } = this.state;
-		const url = `https://apis.justwatch.com/discovery/taste_survey/${region}/next_titles?justwatch_id=${sessionID}`;
+		const { surveyData, settings } = this.state;
 		const data = {
-			count: 0,
-			fields: [],
-			new_liked_jw_entity_ids: surveyData.selected.map(
-				(item) => item.jw_entity_id
-			),
+			titles_required: settings.showExact,
+			selection: surveyData.selected.map((item) => item.name),
 		};
-		return { url, data, method: "post" };
+		return data;
 	};
 
 	componentDidMount() {
@@ -51,151 +59,17 @@ class Choose extends React.Component {
 			return;
 		}
 
-		const { url, data, method } = this.setPerferencesAPIConfig();
-		sendRequest(
-			method,
-			url,
-			data,
-			this.registerInfiniteLoader,
-			this.onRequestFail
-		);
+		const data = this.setPerferencesAPIConfig();
+		getRecommendations(data)
+			.then(this.processTitlesData)
+			.catch(this.onRequestFail);
 	}
 
-	registerInfiniteLoader = () => {
-		const config = {
-			rootMargin: "100px",
-			threshold: [0.25, 0.75, 1],
-		};
-		const observer = new IntersectionObserver(
-			this.handleInfiniteLoaderTrigger,
-			config
-		);
-		observer.observe(this.scrollRef.current);
-	};
-
-	getRecommendationAPIConfig = (from, to, newSession) => {
-		const { region, sessionID } = this.state;
-		const url = `https://apis.justwatch.com/discovery/modules/${region}/current?justwatch_id=${sessionID}`;
-		const data = {
-			fields: ["id", "object_type", "title", "poster"],
-			supported_module_templates: [
-				"MOOD_SELECTOR",
-				"MOVIES_CLASSICS",
-				"MOVIES_HIGHLY_RATED",
-				"MOVIES_POPULAR",
-				"MOVIES_TRENDING",
-				"NEW_MOVIES",
-				"NEW_TITLES",
-				"NEW_TV_SHOWS",
-				"TITLES_BECAUSE_YOU_LOVED_TITLE",
-				"TITLES_BUY_RENT",
-				"TITLES_BY_MOOD",
-				"TITLES_EXPLORE_NEW_GENRES",
-				"TITLES_FAVORITE_GENRE",
-				"TITLES_FREE",
-				"TITLES_HIDDEN_GEM",
-				"TITLES_HIGHLY_RATED",
-				"TITLES_SIMILAR_TO_TAG",
-				"TITLES_TOP_PICKS",
-				"TITLES_TRENDING_BY_PROVIDER",
-				"TITLES_TRENDING",
-				"TITLES_WATCHED_BY_SIMILAR_USERS",
-				"TITLES_WATCHLIST",
-				"TOP_MOVIES",
-				"TOP_TV_SHOWS",
-				"TV_SHOWS_HIGHLY_RATED",
-				"TV_SHOWS_POPULAR",
-				"TV_SHOWS_TRENDING",
-				"TV_SHOWS_TRACKING",
-			],
-			force_new_discovery_session: newSession,
-			popularity_sprinkling: "",
-			release_date_sprinkling: "",
-			filter_content_type: "",
-			filter_popularity: "",
-			filter_rating: "",
-			filter_year: [],
-			from,
-			to,
-		};
-		return { url, data, method: "post" };
-	};
-
-	handleInfiniteLoaderTrigger = (entries) => {
-		entries.forEach((entry) => {
-			if (
-				this.state.requestInProgress ||
-				entry.intersectionRatio === 0 ||
-				this.state.titles.length >= this.state.settings.maxCategories
-			)
-				return;
-			this.getTitles();
-		});
-	};
-
-	getTitles = () => {
-		const { pageRequests } = this.state;
-		const from = pageRequests * 4;
-		const to = from + 3;
-		const newSession = from === 0;
-
-		const { url, data, method } = this.getRecommendationAPIConfig(
-			from,
-			to,
-			newSession
-		);
-
-		this.setState({ requestInProgress: true }, () => {
-			this.createEventLog("Loading Titles");
-			sendRequest(
-				method,
-				url,
-				data,
-				this.processTitlesData,
-				this.onRequestFail
-			);
-		});
-	};
-
 	processTitlesData = (res) => {
-		const items = res.data.items;
-		const processedData = [];
-		items.forEach((item) => {
-			if (item.titles && item.template.translations.title) {
-				processedData.push({
-					category: item.template.translations.title,
-					items: item.titles.slice(0, this.state.settings.showMaxPerCategory),
-				});
-			}
+		const titles = res.data.titles;
+		this.setState({ titles }, () => {
+			this.createEventLog("Titles Loaded", true);
 		});
-
-		this.setState(
-			{
-				requestInProgress: items.length === 0 ? true : false,
-				titles: [...this.state.titles, ...processedData].slice(
-					0,
-					this.state.settings.maxCategories
-				),
-				pageRequests: items.length === 0 ? 0 : this.state.pageRequests + 1,
-				totalRequests: this.state.totalRequests + 1,
-			},
-			() => {
-				if (
-					(this.state.pageRequests === 0 ||
-						document.documentElement.scrollHeight - window.innerHeight < 500) &&
-					this.state.titles.length < this.state.settings.maxCategories
-				) {
-					this.createEventLog(
-						"Titles Loaded are less, auto triggering again",
-						true,
-						this.getTitles
-					);
-
-					return;
-				}
-				this.createEventLog("Titles Loaded", true);
-			}
-		);
 	};
 
 	onRequestFail = (err) => {
@@ -236,7 +110,7 @@ class Choose extends React.Component {
 		this.setState({ selected });
 	};
 
-	getScrollButtons = (rowIndex) => {
+	getScrollButtons = () => {
 		return ["fa-chevron-left", "fa-chevron-right"].map((type, index) => {
 			return (
 				<Button
@@ -245,9 +119,7 @@ class Choose extends React.Component {
 					className="choose-horizontal-scroll-button"
 					onClick={() => {
 						this.createEventLog(
-							`Clicked ${
-								index === 0 ? "LEFT" : "RIGHT"
-							} button on row ${rowIndex}`,
+							`Clicked ${index === 0 ? "LEFT" : "RIGHT"} button `,
 							true
 						);
 					}}
@@ -258,35 +130,37 @@ class Choose extends React.Component {
 		});
 	};
 
-	getScrollData = (data, rowIndex) => {
-		const { selected } = this.state;
-		return data.items.map((item, index) => {
+	getScrollData = () => {
+		const { selected, titles } = this.state;
+		return titles.map((item, index) => {
 			item["index"] = index;
-			item["rowIndex"] = rowIndex;
-			item["category"] = data.category;
 			return (
 				<Card
 					className="survey-image-cards"
 					onClick={() => this.toggleCard(item)}
-					key={item.jw_entity_id}
+					key={item.name}
 				>
 					<Card.Body>
-						<Card.Img
-							className={
-								selected.has(item)
-									? "survey-image survey-image-selected"
-									: "survey-image survey-image-not-selected"
+						<OverlayTrigger
+							key={item.name}
+							placement={"bottom"}
+							overlay={
+								<Tooltip id={"tooltip-bottom"}>
+									<strong>{item.name}</strong>.
+								</Tooltip>
 							}
-							variant="top"
-							src={
-								item.poster &&
-								`https://images.justwatch.com${item.poster.replace(
-									"{profile}",
-									"s166"
-								)}`
-							}
-							alt={item.title}
-						/>
+						>
+							<Card.Img
+								className={
+									selected.has(item)
+										? "survey-image survey-image-selected"
+										: "survey-image survey-image-not-selected"
+								}
+								variant="top"
+								src={`https://images.justwatch.com/poster/${item.poster}/s166`}
+								alt={item.name}
+							/>
+						</OverlayTrigger>
 					</Card.Body>
 				</Card>
 			);
@@ -294,13 +168,14 @@ class Choose extends React.Component {
 	};
 
 	nextPage = (data) => {
-		const { region, iteration } = this.state;
+		const { region, iteration, feedback } = this.state;
 
 		this.props.history.push({
 			pathname: `/${region}/${iteration}/feedback`,
 			state: {
 				...this.props.location.state,
 				choiceData: data,
+				feedbackData: feedback,
 			},
 		});
 	};
@@ -316,22 +191,12 @@ class Choose extends React.Component {
 				totalRequests,
 			} = this.state;
 			if (selected.size === settings.selectExact) {
-				const titlesCompressed = titles.map((row) => {
-					return {
-						category: row.category,
-						items: [
-							["jw_entity_id", "title", "poster", "object_type"],
-							...row.items.map((item) => {
-								return [
-									item.jw_entity_id,
-									item.title,
-									item.poster,
-									item.object_type,
-								];
-							}),
-						],
-					};
-				});
+				const titlesCompressed = [
+					["name", "poster"],
+					...titles.map((item) => {
+						return [item.name, item.poster];
+					}),
+				];
 				const data = {
 					settings,
 					eventlogs,
@@ -345,50 +210,157 @@ class Choose extends React.Component {
 		});
 	};
 
+	generateCards = () => {
+		const scrollData = this.getScrollData();
+		const buttons = this.getScrollButtons();
+
+		return (
+			<Col md={12}>
+				<ScrollMenu
+					scrollBy={5}
+					wheel={false}
+					data={scrollData}
+					hideArrows={true}
+					itemClassActive=""
+					hideSingleArrow={true}
+					arrowLeft={buttons[0]}
+					arrowRight={buttons[1]}
+				/>
+			</Col>
+		);
+	};
+
+	generateOptions = (isBoolean = false) => {
+		if (isBoolean === "comparision") {
+			return [
+				"Much better",
+				"Slightly better",
+				"The same",
+				"Slightly worse",
+				"Much worse",
+			].map((i) => (
+				<option value={i} key={i}>
+					{i}
+				</option>
+			));
+		}
+
+		if (isBoolean) {
+			return ["YES", "NO"].map((i) => (
+				<option value={i} key={i}>
+					{i}
+				</option>
+			));
+		}
+		const options = [];
+		for (var i = 1; i <= 10; i++) {
+			options.push(
+				<option value={i} key={i}>
+					{i}
+				</option>
+			);
+		}
+		return options;
+	};
+
+	onChoiceChange = (questionID, event) => {
+		const { feedback } = this.state;
+		feedback[questionID] = event.target.value;
+		this.createEventLog(`Changed ${questionID} to ${event.target.value}`);
+		this.setState({ feedback });
+	};
+
 	render() {
-		const { titles, settings, selected, iteration, maxIterations } = this.state;
+		const { titles, settings, selected, iteration, feedback } = this.state;
+
+		const {
+			personalizedChoices,
+			watchTonight,
+			alreadySeen,
+			comparision,
+		} = feedback;
 		return (
 			<Container fluid>
 				<Row className="justify-content-md-center page-title-row">
 					<Col md={"auto"}>
 						<h4 className="page-title-h4">
-							Step {iteration * 3 + 2}/{maxIterations * 3}: Choose{" "}
-							{settings.selectExact} titles from the recommendation
+							Algorithm-{iteration + 1} Step 2/2: Choose {settings.selectExact}{" "}
+							titles from the recommendation
 						</h4>
 					</Col>
 				</Row>
-				{titles.map((data, rowIndex) => {
-					const scrollData = this.getScrollData(data, rowIndex);
-					const buttons = this.getScrollButtons(rowIndex);
-					return (
-						<Row key={rowIndex}>
+
+				{titles.length === 0 ? (
+					<Spinner animation="border" variant="warning" />
+				) : (
+					<>
+						<Row>
 							<Col md={"auto"}>
-								<h5 className="choose-scroll-name">{data.category}</h5>
+								<h5 className="choose-scroll-name">Based on your selection</h5>
 							</Col>
-							<Col md={12}>
-								<ScrollMenu
-									scrollBy={5}
-									wheel={false}
-									data={scrollData}
-									hideArrows={true}
-									itemClassActive=""
-									hideSingleArrow={true}
-									arrowLeft={buttons[0]}
-									arrowRight={buttons[1]}
-								/>
+							{this.generateCards()}
+						</Row>
+						<Row className="justify-content-md-center ">
+							<Col md={"auto"}>
+								<div className="feedback-form">
+									<Form onSubmit={this.proceed}>
+										<Form.Group controlId="exampleForm.ControlInput1">
+											<Form.Label>
+												Rate the personalized movie choices
+											</Form.Label>
+											<Form.Control
+												as="select"
+												defaultValue={personalizedChoices}
+												onChange={(e) =>
+													this.onChoiceChange("personalizedChoices", e)
+												}
+											>
+												{this.generateOptions()}
+											</Form.Control>
+										</Form.Group>
+										<Form.Group controlId="exampleForm.ControlSelect1">
+											<Form.Label>
+												Rate how happy you would be to watch this movie tonight
+											</Form.Label>
+											<Form.Control
+												as="select"
+												defaultValue={watchTonight}
+												onChange={(e) => this.onChoiceChange("watchTonight", e)}
+											>
+												{this.generateOptions()}
+											</Form.Control>
+										</Form.Group>
+										<Form.Group controlId="exampleForm.ControlSelect2">
+											<Form.Label>
+												Is movie the one you have seen before?
+											</Form.Label>
+											<Form.Control
+												as="select"
+												defaultValue={alreadySeen}
+												onChange={(e) => this.onChoiceChange("alreadySeen", e)}
+											>
+												{this.generateOptions(true)}
+											</Form.Control>
+										</Form.Group>
+										<Form.Group controlId="exampleForm.ControlSelect3">
+											<Form.Label>
+												How would you compare the above choices to what you are
+												shown on your current streaming services?
+											</Form.Label>
+											<Form.Control
+												as="select"
+												defaultValue={comparision}
+												onChange={(e) => this.onChoiceChange("comparision", e)}
+											>
+												{this.generateOptions("comparision")}
+											</Form.Control>
+										</Form.Group>
+									</Form>
+								</div>
 							</Col>
 						</Row>
-					);
-				})}
-				<div className="survey-infinite-scroll-div" ref={this.scrollRef}>
-					{titles.length >= settings.maxCategories ? (
-						<div>
-							<h5>No more titles to present</h5>
-						</div>
-					) : (
-						<Spinner animation="border" variant="warning" />
-					)}
-				</div>
+					</>
+				)}
 				{selected.size === settings.selectExact && (
 					<Row className="survey-proceed-row">
 						<Col xs={12} className="survey-proceed-col-items-center">

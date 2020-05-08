@@ -27,3 +27,20 @@ export function storeData(data) {
 		data: { data, file_name: config.fileName, sheet_id: config.sheetID },
 	});
 }
+
+export function fetchTitles(params) {
+	console.log(params);
+	return axios({
+		method: "get",
+		url: env.fetchTitlesURL,
+		params: params,
+	});
+}
+
+export function getRecommendations(data) {
+	return axios({
+		method: "post",
+		url: env.recommendationURL,
+		data: data,
+	});
+}

@@ -1,10 +1,13 @@
 export const config = {
 	host: "https://jw-test-sur-v1-c238.herokuapp.com", // Backend URL
+	// host: "http://localhost:5000", // Backend URL
 	fileName: "JustWatchSurvey", // GoogleSheets FileName
 	sheetID: "0", // Sheet Index
 };
 
 const env = {
+	fetchTitlesURL: `${config.host}/fetch/`,
+	recommendationURL: `${config.host}/recommendations/`,
 	saveData: `${config.host}/submit/`,
 	proxy: (encodedUrl) => {
 		return `${config.host}/${encodedUrl}/end/`;
@@ -27,13 +30,11 @@ const env = {
 		],
 		choose: [
 			{
-				maxCategories: 20, // Max Categories to show
-				showMaxPerCategory: 20, // Max Titles Per Category Max value - 20
+				showExact: 20, // Number of Recommendations to show
 				selectExact: 3, // Number of titles user should select.
 			},
 			{
-				maxCategories: 40, // Max Categories to show
-				showMaxPerCategory: 20, // Max Titles Per Category Max value - 20
+				showExact: 20, // Number of Recommendations to show
 				selectExact: 5, // Number of titles user should select.
 			},
 		],

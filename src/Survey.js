@@ -1,10 +1,20 @@
 import "./global.css";
 
-import { Button, Card, Col, Container, Row, Spinner } from "react-bootstrap";
+import {
+	Button,
+	Card,
+	Col,
+	Container,
+	OverlayTrigger,
+	Row,
+	Spinner,
+	Tooltip,
+} from "react-bootstrap";
 
 import React from "react";
+// import Tooltip from "react-bootstrap/Tooltip";
 import env from "./environment";
-import { sendRequest } from "./utilities";
+import { fetchTitles } from "./utilities";
 
 const surveySettings = env.settings.survey;
 const maxIterations = env.settings.maxIterations;
@@ -18,7 +28,7 @@ class Survey extends React.Component {
 		settings:
 			surveySettings[this.props.location.state.iteration] || surveySettings[0],
 		trackTime: null,
-		page: -1,
+		page: 0,
 		...this.props.location.state,
 	};
 	scrollRef = React.createRef();
@@ -35,40 +45,14 @@ class Survey extends React.Component {
 		);
 	};
 
-	getRegisterUserAPIConfig = () => {
-		const { region, sessionID } = this.state;
-		const url = `https://apis.justwatch.com/personalization/settings/${region}/mutate?justwatch_id=${sessionID}`;
-		const data = {
-			mutations: [
-				{
-					field: "taste_survey_type",
-					unset: "",
-					set: "AUTO_DIGGER",
-				},
-				{
-					field: "providers",
-					unset: [],
-					set: ["nfx", "prv"],
-				},
-				{
-					field: "taste_survey_model_version",
-					unset: "",
-					set: "2020-01-08_14-49-42-ab_high_perc",
-				},
-			],
-		};
-		return { url, data, method: "post" };
-	};
-
 	getTitlesAPIConfig = () => {
-		const { region, sessionID, settings } = this.state;
-		const url = `https://apis.justwatch.com/discovery/taste_survey/${region}/next_titles?justwatch_id=${sessionID}`;
-		const data = {
-			count: settings.pageSize,
-			fields: ["poster", "id", "object_type", "title"],
-			new_liked_jw_entity_ids: [],
+		const { settings, page, iteration } = this.state;
+		const params = {
+			page: page + 1,
+			seq: iteration,
+			page_size: settings.pageSize,
 		};
-		return { url, data, method: "post" };
+		return params;
 	};
 
 	componentDidMount() {
@@ -83,14 +67,7 @@ class Survey extends React.Component {
 			return;
 		}
 
-		const { url, data, method } = this.getRegisterUserAPIConfig();
-		sendRequest(
-			method,
-			url,
-			data,
-			this.registerInfiniteLoader,
-			this.onRequestFail
-		);
+		this.registerInfiniteLoader();
 	}
 
 	registerInfiniteLoader = () => {
@@ -127,8 +104,8 @@ class Survey extends React.Component {
 		this.setState({ requestInProgress: true }, () =>
 			this.createEventLog("Loading Titles")
 		);
-		const { url, data, method } = this.getTitlesAPIConfig();
-		sendRequest(method, url, data, this.setTitles, this.onRequestFail);
+		const params = this.getTitlesAPIConfig();
+		fetchTitles(params).then(this.setTitles).catch(this.onRequestFail);
 	};
 
 	setTitles = (res) => {
@@ -136,7 +113,7 @@ class Survey extends React.Component {
 			{
 				requestInProgress: false,
 				page: this.state.page + 1,
-				titles: [...this.state.titles, ...res.data.next_titles].slice(
+				titles: [...this.state.titles, ...res.data.titles].slice(
 					0,
 					this.state.settings.showMax
 				),
@@ -199,14 +176,9 @@ class Survey extends React.Component {
 			} = this.state;
 			if (selected.size === settings.selectExact) {
 				const titlesCompressed = [
-					["jw_entity_id", "title", "poster", "object_type"],
+					["name", "poster"],
 					...titles.map((item) => {
-						return [
-							item.jw_entity_id,
-							item.title,
-							item.poster,
-							item.object_type,
-						];
+						return [item.name, item.poster];
 					}),
 				];
 				const data = {
@@ -223,14 +195,14 @@ class Survey extends React.Component {
 	};
 
 	render() {
-		const { selected, titles, settings, iteration, maxIterations } = this.state;
+		const { selected, titles, settings, iteration } = this.state;
 		return (
 			<Container fluid>
 				<Row className="justify-content-md-center page-title-row">
 					<Col md={"auto"}>
 						<h4 className="page-title-h4">
-							Step {iteration * 3 + 1}/{maxIterations * 3}: Select{" "}
-							{settings.selectExact} titles
+							Algorithm-{iteration + 1} Step 1/2: Select {settings.selectExact}{" "}
+							titles
 						</h4>
 					</Col>
 				</Row>
@@ -241,21 +213,29 @@ class Survey extends React.Component {
 							<Card
 								className="survey-image-cards"
 								onClick={() => this.toggleCard(item)}
-								key={item.jw_entity_id}
+								key={item.name}
 							>
 								<Card.Body>
-									<Card.Img
-										className={
-											selected.has(item)
-												? "survey-image-selected"
-												: "survey-image-not-selected"
+									<OverlayTrigger
+										key={item.name}
+										placement={"bottom"}
+										overlay={
+											<Tooltip id={"tooltip-bottom"}>
+												<strong>{item.name}</strong>.
+											</Tooltip>
 										}
-										variant="top"
-										src={`https://images.justwatch.com${item.poster.replace(
-											"{profile}",
-											"s166"
-										)}`}
-									/>
+									>
+										<Card.Img
+											className={
+												selected.has(item)
+													? "survey-image-selected"
+													: "survey-image-not-selected"
+											}
+											variant="top"
+											src={`https://images.justwatch.com/poster/${item.poster}/s166`}
+											alt={item.name}
+										/>
+									</OverlayTrigger>
 								</Card.Body>
 							</Card>
 						);
